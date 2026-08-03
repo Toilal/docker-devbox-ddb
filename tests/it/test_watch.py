@@ -1,4 +1,3 @@
-import os
 import shutil
 import threading
 import time
@@ -11,6 +10,13 @@ from waiting import wait
 
 from ddb.__main__ import main, stop_watch, wait_watch_started
 from tests.utilstest import expect_gitignore, setup_cfssl
+
+# The watchers report changes asynchronously, and macOS coalesces them behind FSEvents.
+WATCH_TIMEOUT = 20
+
+# wait_watch_started returns as soon as the observers are started, but the watches they
+# install, and the events macOS has already coalesced, need a moment to settle.
+WATCH_SETTLE_DELAY = 2
 
 
 def init_test_watch(command: Iterable[str], *, watch: bool):
@@ -26,9 +32,7 @@ def init_test_watch(command: Iterable[str], *, watch: bool):
         thread = threading.Thread(name="watch", target=main_runner)
         thread.start()
         wait_watch_started(30)
-        if os.environ.get("TRAVIS") == "true":
-            # On TravisCI, it seems there is some race condition that may cause tests to fail without this.
-            time.sleep(1)
+        time.sleep(WATCH_SETTLE_DELAY)
     else:
         main_runner()
 
@@ -55,10 +59,13 @@ class TestWatch:
                 lambda: (
                     Path("test.txt").exists() and Path("test.txt").read_text() == "This is watch1 project. (modified)"
                 ),
-                timeout_seconds=5,
+                timeout_seconds=WATCH_TIMEOUT,
             )
 
-            wait(lambda: Path(".gitignore").exists() and expect_gitignore(".gitignore", "/test.txt"), timeout_seconds=5)
+            wait(
+                lambda: Path(".gitignore").exists() and expect_gitignore(".gitignore", "/test.txt"),
+                timeout_seconds=WATCH_TIMEOUT,
+            )
         finally:
             if watch:
                 stop_watch()
@@ -86,14 +93,14 @@ class TestWatch:
                     Path("test.created.txt").exists()
                     and Path("test.created.txt").read_text() == "This is watch1 project. (created)"
                 ),
-                timeout_seconds=5,
+                timeout_seconds=WATCH_TIMEOUT,
             )
 
             wait(
                 lambda: (
                     Path(".gitignore").exists() and expect_gitignore(".gitignore", "/test.txt", "/test.created.txt")
                 ),
-                timeout_seconds=5,
+                timeout_seconds=WATCH_TIMEOUT,
             )
         finally:
             if watch:
@@ -116,8 +123,8 @@ class TestWatch:
             if not watch:
                 main_runner()
 
-            wait(lambda: not Path("test.txt").exists(), timeout_seconds=5)
-            wait(lambda: not expect_gitignore(".gitignore", "/text.txt"), timeout_seconds=5)
+            wait(lambda: not Path("test.txt").exists(), timeout_seconds=WATCH_TIMEOUT)
+            wait(lambda: not expect_gitignore(".gitignore", "/text.txt"), timeout_seconds=WATCH_TIMEOUT)
         finally:
             if watch:
                 stop_watch()
@@ -141,11 +148,12 @@ class TestWatch:
 
             wait(
                 lambda: not Path("test.txt").exists() and Path("test2.txt").exists() and "This is watch1 project.",
-                timeout_seconds=5,
+                timeout_seconds=WATCH_TIMEOUT,
             )
 
             wait(
-                lambda: Path(".gitignore").exists() and expect_gitignore(".gitignore", "/test2.txt"), timeout_seconds=5
+                lambda: Path(".gitignore").exists() and expect_gitignore(".gitignore", "/test2.txt"),
+                timeout_seconds=WATCH_TIMEOUT,
             )
         finally:
             if watch:
@@ -351,9 +359,9 @@ class TestWatchCerts:
             if not watch:
                 main_runner()
 
-            wait(lambda: Path("docker-compose.yml").exists(), timeout_seconds=5)
-            wait(lambda: not (Path(".certs") / "watch-certs.test.key").exists(), timeout_seconds=5)
-            wait(lambda: not (Path(".certs") / "watch-certs.test.crt").exists(), timeout_seconds=5)
+            wait(lambda: Path("docker-compose.yml").exists(), timeout_seconds=WATCH_TIMEOUT)
+            wait(lambda: not (Path(".certs") / "watch-certs.test.key").exists(), timeout_seconds=WATCH_TIMEOUT)
+            wait(lambda: not (Path(".certs") / "watch-certs.test.crt").exists(), timeout_seconds=WATCH_TIMEOUT)
 
             with Path("docker-compose.yml.jsonnet").open() as f:
                 ddb_yml_content = f.read()
@@ -367,13 +375,17 @@ class TestWatchCerts:
             if not watch:
                 main_runner()
 
-            wait(lambda: (Path(".certs") / "watch-certs.test.key").exists(), timeout_seconds=5)
-            wait(lambda: (Path(".certs") / "watch-certs.test.crt").exists(), timeout_seconds=5)
-            wait(lambda: (Path("..") / "home" / "certs" / "watch-certs.test.key").exists(), timeout_seconds=5)
-            wait(lambda: (Path("..") / "home" / "certs" / "watch-certs.test.crt").exists(), timeout_seconds=5)
+            wait(lambda: (Path(".certs") / "watch-certs.test.key").exists(), timeout_seconds=WATCH_TIMEOUT)
+            wait(lambda: (Path(".certs") / "watch-certs.test.crt").exists(), timeout_seconds=WATCH_TIMEOUT)
+            wait(
+                lambda: (Path("..") / "home" / "certs" / "watch-certs.test.key").exists(), timeout_seconds=WATCH_TIMEOUT
+            )
+            wait(
+                lambda: (Path("..") / "home" / "certs" / "watch-certs.test.crt").exists(), timeout_seconds=WATCH_TIMEOUT
+            )
             wait(
                 lambda: (Path("..") / "home" / "traefik" / "config" / "watch-certs.test.ssl.toml").exists(),
-                timeout_seconds=5,
+                timeout_seconds=WATCH_TIMEOUT,
             )
 
             ssl_configuration = Path(
@@ -399,19 +411,19 @@ class TestWatchCerts:
             if not watch:
                 main_runner()
 
-            wait(lambda: not (Path(".certs") / "watch-certs.test.key").exists(), timeout_seconds=5)
-            wait(lambda: not (Path(".certs") / "watch-certs.test.crt").exists(), timeout_seconds=5)
+            wait(lambda: not (Path(".certs") / "watch-certs.test.key").exists(), timeout_seconds=WATCH_TIMEOUT)
+            wait(lambda: not (Path(".certs") / "watch-certs.test.crt").exists(), timeout_seconds=WATCH_TIMEOUT)
             wait(
                 lambda: not (Path("..") / "home" / "certs" / "watch-certs.test.key").exists(),
-                timeout_seconds=5,
+                timeout_seconds=WATCH_TIMEOUT,
             )
             wait(
                 lambda: not (Path("..") / "home" / "certs" / "watch-certs.test.crt").exists(),
-                timeout_seconds=5,
+                timeout_seconds=WATCH_TIMEOUT,
             )
             wait(
                 lambda: not (Path("..") / "home" / "traefik" / "config" / "watch-certs.test.ssl.toml").exists(),
-                timeout_seconds=5,
+                timeout_seconds=WATCH_TIMEOUT,
             )
         finally:
             if watch:
