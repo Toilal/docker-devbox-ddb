@@ -2,6 +2,7 @@ import hashlib
 import os
 import re
 from collections.abc import Iterable
+from pathlib import Path
 
 from dotty_dict import Dotty
 from slugify import slugify
@@ -12,6 +13,7 @@ from ddb.feature import Feature
 from ...config import config
 from ...utils.compat import path_as_posix_fast
 from ...utils.file import TemplateFinder
+from ...utils.path import absolute_path
 from .actions import JsonnetAction
 from .schema import JsonnetSchema
 
@@ -37,7 +39,7 @@ class JsonnetFeature(Feature):
     def actions(self) -> Iterable[Action]:
         return (JsonnetAction(),)
 
-    def _configure_defaults(self, feature_config: Dotty):
+    def _configure_defaults(self, feature_config: Dotty) -> None:
         self._configure_defaults_includes(feature_config)
         self._configure_defaults_user_from_name_and_group(feature_config)
         self._configure_defaults_user(feature_config)
@@ -51,7 +53,7 @@ class JsonnetFeature(Feature):
         self._configure_defaults_mount(feature_config)
 
     @staticmethod
-    def _configure_defaults_includes(feature_config):
+    def _configure_defaults_includes(feature_config: Dotty) -> None:
         includes = feature_config.get("includes")
         if includes is None:
             includes = TemplateFinder.build_default_includes_from_suffixes(
@@ -60,7 +62,7 @@ class JsonnetFeature(Feature):
             feature_config["includes"] = includes
 
     @staticmethod
-    def _configure_defaults_user_from_name_and_group(feature_config):
+    def _configure_defaults_user_from_name_and_group(feature_config: Dotty) -> None:
         uid = feature_config.get("docker.user.uid", config.data.get("docker.user.uid"))
         gid = feature_config.get("docker.user.gid", config.data.get("docker.user.gid"))
 
@@ -88,7 +90,7 @@ class JsonnetFeature(Feature):
                     import grp
 
                     struct_group = grp.getgrnam(group)
-                    gid = struct_group.gr_id
+                    gid = struct_group.gr_gid
                     feature_config["docker.user.gid"] = gid
                 except ImportError:
                     pass
@@ -96,7 +98,7 @@ class JsonnetFeature(Feature):
                     pass
 
     @staticmethod
-    def _configure_defaults_user_maps(feature_config):
+    def _configure_defaults_user_maps(feature_config: Dotty) -> None:
         name_to_uid = feature_config.get("docker.user.name_to_uid")
         group_to_gid = feature_config.get("docker.user.group_to_gid")
 
@@ -123,7 +125,7 @@ class JsonnetFeature(Feature):
             pass
 
     @staticmethod
-    def _configure_defaults_user(feature_config):
+    def _configure_defaults_user(feature_config: Dotty) -> None:
         uid = feature_config.get("docker.user.uid", config.data.get("docker.user.uid"))
         if uid is None:
             try:
@@ -141,7 +143,7 @@ class JsonnetFeature(Feature):
             feature_config["docker.user.gid"] = gid
 
     @staticmethod
-    def _configure_defaults_xdebug(feature_config):
+    def _configure_defaults_xdebug(feature_config: Dotty) -> None:
         if feature_config.get("docker.xdebug.host") is None:
             feature_config["docker.xdebug.host"] = config.data.get("docker.ip")
 
@@ -160,7 +162,7 @@ class JsonnetFeature(Feature):
                 feature_config["docker.xdebug.disabled"] = False
 
     @staticmethod
-    def _configure_defaults_port_prefix(feature_config):
+    def _configure_defaults_port_prefix(feature_config: Dotty) -> None:
         port_prefix = feature_config.get("docker.expose.port_prefix")
         if port_prefix is None:
             project_name = config.data.get("core.project.name")
@@ -171,7 +173,7 @@ class JsonnetFeature(Feature):
                 feature_config["docker.expose.port_prefix"] = port_prefix
 
     @staticmethod
-    def _configure_defaults_compose_project_name(feature_config):
+    def _configure_defaults_compose_project_name(feature_config: Dotty) -> None:
         """
         See https://github.com/docker/compose/blob/440c94ea7a7e62b3de50722120ca34c4e818205a/compose/cli/command.py#L181.
         """
@@ -179,11 +181,11 @@ class JsonnetFeature(Feature):
         if compose_project_name is None:
             compose_project_name = feature_config.get("core.project.name")
 
-        def normalize_name(name):
+        def normalize_name(name: str) -> str:
             return re.sub(r"[^-_a-z0-9]", "", name.lower()).replace("_", "-")
 
         if not compose_project_name:
-            compose_project_name = os.path.basename(os.path.abspath(config.paths.project_home))
+            compose_project_name = Path(absolute_path(config.paths.project_home)).name
 
         compose_project_name = normalize_name(compose_project_name)
         feature_config["docker.compose.project_name"] = compose_project_name
@@ -198,7 +200,7 @@ class JsonnetFeature(Feature):
         config.env_additions["COMPOSE_NETWORK_NAME"] = compose_network_name
 
     @staticmethod
-    def _configure_defaults_build_image_tag(feature_config):
+    def _configure_defaults_build_image_tag(feature_config: Dotty) -> None:
         build_image_tag_from = feature_config.get("docker.build.image_tag_from")
         build_image_tag = feature_config.get("docker.builder.image_tag")
         if build_image_tag is None and build_image_tag_from:
@@ -221,7 +223,7 @@ class JsonnetFeature(Feature):
                 )
 
     @staticmethod
-    def _configure_defaults_restart_policy(feature_config):
+    def _configure_defaults_restart_policy(feature_config: Dotty) -> None:
         restart_policy = feature_config.get("docker.service.restart")
         if restart_policy is None:
             if config.data.get("core.env.current") == "dev":
@@ -230,7 +232,7 @@ class JsonnetFeature(Feature):
                 feature_config["docker.service.restart"] = "unless-stopped"
 
     @staticmethod
-    def _configure_defaults_https(feature_config):
+    def _configure_defaults_https(feature_config: Dotty) -> None:
         https = feature_config.get("docker.virtualhost.https")
         redirect_to_https = feature_config.get("docker.virtualhost.redirect_to_https")
 
@@ -238,10 +240,10 @@ class JsonnetFeature(Feature):
             feature_config["docker.virtualhost.redirect_to_https"] = False
 
     @staticmethod
-    def _configure_defaults_mount(feature_config):
+    def _configure_defaults_mount(feature_config: Dotty) -> None:
         directory = feature_config.get("docker.mount.directory")
         if directory is not None:
-            absolute_directory = os.path.abspath(directory) if not os.path.isabs(directory) else directory
+            absolute_directory = directory if Path(directory).is_absolute() else absolute_path(directory)
             if os.name == "nt":
                 absolute_directory = path_as_posix_fast(absolute_directory)
             feature_config["docker.mount.directory"] = absolute_directory
@@ -250,7 +252,7 @@ class JsonnetFeature(Feature):
             absolute_directories = {}
             for directory_key, directory_value in directories.items():
                 absolute_directories[directory_key] = (
-                    os.path.abspath(directory_value) if not os.path.isabs(directory_value) else directory_value
+                    directory_value if Path(directory_value).is_absolute() else absolute_path(directory_value)
                 )
                 if os.name == "nt":
                     absolute_directories[directory_key] = path_as_posix_fast(absolute_directories[directory_key])

@@ -2,8 +2,11 @@ import fnmatch
 import os
 import re
 import shutil
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from tempfile import NamedTemporaryFile, gettempdir
+from types import TracebackType
+from typing import IO, Any
 
 import chmod_monkey
 import requests
@@ -14,15 +17,24 @@ from ddb.context import context
 from ddb.utils.re import build_or_pattern
 
 
-def has_same_content(filename1: str, filename2: str, read_mode="rb") -> bool:
+def has_same_content(filename1: str, filename2: str, read_mode: str = "rb") -> bool:
     """
     Check if the content of two files are same.
     """
-    with open(filename1, mode=read_mode) as file1, open(filename2, mode=read_mode) as file2:
-        return file1.read() == file2.read()
+    with Path(filename1).open(mode=read_mode) as file1, Path(filename2).open(mode=read_mode) as file2:
+        return bool(file1.read() == file2.read())
 
 
-def write_if_different(file, data, read_mode="r", write_mode="w", log_source=None, readonly=True, **kwargs) -> bool:
+def write_if_different(
+    file: str,
+    data: str | bytes,
+    read_mode: str = "r",
+    write_mode: str = "w",
+    log_source: str | None = None,
+    *,
+    readonly: bool = True,
+    **kwargs: Any,
+) -> bool:
     """
     Write the file if existing data is different than given data.
     """
@@ -30,9 +42,9 @@ def write_if_different(file, data, read_mode="r", write_mode="w", log_source=Non
         read_encoding = "utf-8" if "b" not in read_mode else None  # TODO: make default encoding configurable
         write_encoding = "utf-8" if "b" not in write_mode else None
 
-        if os.path.exists(file):
+        if Path(file).exists():
             try:
-                with open(file, mode=read_mode, encoding=read_encoding, **kwargs) as read_file:
+                with Path(file).open(mode=read_mode, encoding=read_encoding, **kwargs) as read_file:
                     existing_data = read_file.read()
             except OSError:
                 shutil.rmtree(file)
@@ -44,20 +56,29 @@ def write_if_different(file, data, read_mode="r", write_mode="w", log_source=Non
             context.log.notice("%s -> %s", log_source if log_source else "", file)
             return False
 
-        if not os.access(file, os.W_OK) and os.path.isfile(file):
+        if not os.access(file, os.W_OK) and Path(file).is_file():
             chmod(file, "+w", logging=False)
-        with open(file, mode=write_mode, encoding=write_encoding, **kwargs) as write_file:
+        with Path(file).open(mode=write_mode, encoding=write_encoding, **kwargs) as write_file:
             write_file.write(data)
 
         context.log.success("%s -> %s", log_source if log_source else "", file)
 
         return True
     finally:
-        if readonly and os.path.isfile(file):
+        if readonly and Path(file).is_file():
             chmod(file, "+r", logging=False)
 
 
-def copy_if_different(source, target, read_mode="r", write_mode="w", log=False, readonly=True, **kwargs) -> bool:
+def copy_if_different(
+    source: str,
+    target: str,
+    read_mode: str = "r",
+    write_mode: str = "w",
+    *,
+    log: bool = False,
+    readonly: bool = True,
+    **kwargs: Any,
+) -> bool:
     """
     Copy source to target if existing source data is different than target data.
     """
@@ -65,14 +86,14 @@ def copy_if_different(source, target, read_mode="r", write_mode="w", log=False, 
         read_encoding = "utf-8" if "b" not in read_mode else None  # TODO: make default encoding configurable
         write_encoding = "utf-8" if "b" not in write_mode else None
 
-        if os.path.exists(source):
-            with open(source, mode=read_mode, encoding=read_encoding, **kwargs) as read_file:
+        if Path(source).exists():
+            with Path(source).open(mode=read_mode, encoding=read_encoding, **kwargs) as read_file:
                 source_data = read_file.read()
         else:
             source_data = None
 
-        if os.path.exists(target):
-            with open(target, mode=read_mode, encoding=read_encoding, **kwargs) as read_file:
+        if Path(target).exists():
+            with Path(target).open(mode=read_mode, encoding=read_encoding, **kwargs) as read_file:
                 target_data = read_file.read()
         else:
             target_data = None
@@ -82,9 +103,9 @@ def copy_if_different(source, target, read_mode="r", write_mode="w", log=False, 
                 context.log.notice("%s -> %s", source, target)
             return False
 
-        if not os.access(target, os.W_OK) and os.path.exists(target):
+        if not os.access(target, os.W_OK) and Path(target).exists():
             chmod(target, "+w")
-        with open(target, mode=write_mode, encoding=write_encoding, **kwargs) as write_file:
+        with Path(target).open(mode=write_mode, encoding=write_encoding, **kwargs) as write_file:
             write_file.write(source_data)
 
         if log:
@@ -92,26 +113,26 @@ def copy_if_different(source, target, read_mode="r", write_mode="w", log=False, 
 
         return True
     finally:
-        if readonly and os.path.isfile(target):
+        if readonly and Path(target).is_file():
             chmod(target, "+r", logging=False)
 
 
-def force_remove(file: str, silent=False):
+def force_remove(file: str, *, silent: bool = False) -> None:
     """
     Remove a file, trying to unset readonly flag if a PermissionError occurs.
     """
     try:
-        os.remove(file)
+        Path(file).unlink()
     except PermissionError:
         # On windows, removing a readonly file raise this error.
         chmod(file, "+w", logging=False)
-        os.remove(file)
+        Path(file).unlink()
     except FileNotFoundError:
         if not silent:
             context.log.warning("%s can't be removed because it's already absent", file)
 
 
-def chmod(file: str, mode: str, logging=True):
+def chmod(file: str, mode: str, *, logging: bool = True) -> None:
     """
     Apply given mode to file.
     """
@@ -119,7 +140,7 @@ def chmod(file: str, mode: str, logging=True):
     if old_mode != new_mode:
         if logging:
             context.log.success("chmod %s %s", mode, file)
-        os.chmod(file, new_mode)
+        Path(file).chmod(new_mode)
     else:
         if logging:
             context.log.notice("chmod %s %s", mode, file)
@@ -151,9 +172,9 @@ class FileUtils:
         :return:
         """
         file_path = file_path.replace("file://", "")
-        if not os.path.isabs(file_path):
-            file_path = os.path.join(config.path.project_home, file_path)
-        with open(file_path, "rb") as file:
+        if not Path(file_path).is_absolute():
+            file_path = str(Path(config.path.project_home) / file_path)
+        with Path(file_path).open("rb") as file:
             return file.read().decode("utf-8")
 
 
@@ -171,10 +192,11 @@ class FileWalker:
         exclude_files: list[str] | None,
         suffixes: list[str] | None,
         rootpath: Path | str | None = None,
-        recursive=True,
-        skip_processed_sources=True,
-        skip_processed_targets=True,
-    ):
+        *,
+        recursive: bool = True,
+        skip_processed_sources: bool = True,
+        skip_processed_targets: bool = True,
+    ) -> None:
         if includes is None:
             includes = []
         if excludes is None:
@@ -204,17 +226,17 @@ class FileWalker:
         self.skip_processed_targets = skip_processed_targets
 
     @property
-    def items(self):
+    def items(self) -> Iterator[Any]:
         """
         Yields over a tuple (template, target) with found templates.
         """
         for source in self._walk(str(self.rootpath), recursive=self.recursive):
             yield from self._do_yield(source)
 
-    def _do_yield(self, source):
+    def _do_yield(self, source: str) -> Iterator[Any]:
         yield source
 
-    def _walk(self, path, recursive=True):
+    def _walk(self, path: str, *, recursive: bool = True) -> Iterator[str]:
         for root, dirs, files in os.walk(path):
             context.log.debug("%s", root)
             for dirs_item in list(dirs):
@@ -235,7 +257,7 @@ class FileWalker:
             if not recursive:
                 break
 
-    def is_source_filtered(self, candidate: str):
+    def is_source_filtered(self, candidate: str) -> bool:
         """
         Check if a source path is filtered out by includes/excludes.
         """
@@ -246,27 +268,27 @@ class FileWalker:
         )
 
     @staticmethod
-    def _braceexpand(expressions):
-        expanded_expressions = []
+    def _braceexpand(expressions: Iterable[str]) -> list[str]:
+        expanded_expressions: list[str] = []
         for expression in expressions:
             expanded_expressions.extend(braceexpand(expression))
 
         return expanded_expressions
 
     @staticmethod
-    def _is_excluded(candidate: str, *excludes: re.Pattern) -> bool:
+    def _is_excluded(candidate: str, *excludes: re.Pattern[str]) -> bool:
         if not excludes:
             return False
         return FileWalker.match_any_pattern(candidate, *excludes)
 
     @staticmethod
-    def _is_included(candidate: str, *includes: re.Pattern) -> bool:
+    def _is_included(candidate: str, *includes: re.Pattern[str]) -> bool:
         if not includes:
             return True
         return FileWalker.match_any_pattern(candidate, *includes)
 
     @staticmethod
-    def _has_ancestor_excluded(candidate_path: Path, *excludes: re.Pattern) -> bool:
+    def _has_ancestor_excluded(candidate_path: Path, *excludes: re.Pattern[str]) -> bool:
         while True:
             if FileWalker._is_excluded(str(candidate_path), *excludes):
                 return True
@@ -277,7 +299,7 @@ class FileWalker:
         return False
 
     @staticmethod
-    def _path_alternatives_for_pattern_match(path: str):
+    def _path_alternatives_for_pattern_match(path: str) -> Iterator[str]:
         if path[0:2] == "./":
             yield path[2:]
             yield path
@@ -286,22 +308,24 @@ class FileWalker:
             yield "./" + path
 
     @staticmethod
-    def _as_posix_fast(path: str):
+    def _as_posix_fast(path: str) -> str:
         return path.replace("\\", "/")
 
     @staticmethod
-    def _join(parent: str, child: str):
-        return os.path.join(parent, child) if parent != "." else child
+    def _join(parent: str, child: str) -> str:
+        # PTH118: os.walk yields "./sub" as root, and the walked paths are published as is
+        # through file:found, cached and written to .gitignore; Path would drop the "./".
+        return os.path.join(parent, child) if parent != "." else child  # noqa: PTH118
 
     @staticmethod
-    def re_compile_patterns(*patterns: str):
+    def re_compile_patterns(*patterns: str) -> re.Pattern[str]:
         """
         Compile a list of string containing patterns to regexp.
         """
         return re.compile(build_or_pattern([fnmatch.translate(pattern) for pattern in patterns]))
 
     @staticmethod
-    def match_any_pattern(candidate: str, *patterns: re.Pattern):
+    def match_any_pattern(candidate: str, *patterns: re.Pattern[str]) -> bool:
         """
         Check if a string match at least one of provided compiled pattern.
         """
@@ -313,7 +337,7 @@ class FileWalker:
         return False
 
     @staticmethod
-    def build_default_includes_from_suffixes(suffixes: list[str], extensions=(".*", "")):
+    def build_default_includes_from_suffixes(suffixes: list[str], extensions: Iterable[str] = (".*", "")) -> list[str]:
         """
         Build default includes configuration from suffixes configuration.
         """
@@ -334,7 +358,7 @@ class TemplateFinder(FileWalker):
     Find templates sources inside project directory.
     """
 
-    def _do_yield(self, source):
+    def _do_yield(self, source: str) -> Iterator[tuple[str, str]]:
         target = self.get_target(source, check=False)
         if target:
             if self.skip_processed_targets:
@@ -342,7 +366,7 @@ class TemplateFinder(FileWalker):
                     return
             yield source, target
 
-    def get_target(self, source, check=True):
+    def get_target(self, source: str, *, check: bool = True) -> str | None:
         """
         Get the target of given source, or None if it doesn't match suffixes.
         """
@@ -355,6 +379,8 @@ class TemplateFinder(FileWalker):
                 return None
 
         target, suffix = self._get_target_and_suffix(source, self.suffixes)
+        if target is None or suffix is None:
+            return None
 
         if self.skip_processed_targets:
             if target in context.processed_targets:
@@ -369,7 +395,9 @@ class TemplateFinder(FileWalker):
 
     @staticmethod
     def _get_target_and_suffix(template_candidate: str, suffixes: list[str]) -> tuple[str, str] | tuple[None, None]:
-        basename, ext = os.path.splitext(template_candidate)
+        # PTH122: Path.suffix parts ways with splitext on trailing dots and trailing separators,
+        # and candidates are file paths coming from the project.
+        basename, ext = os.path.splitext(template_candidate)  # noqa: PTH122
         if ext in suffixes:
             return basename, ext
 
@@ -384,11 +412,11 @@ class TemplateFinder(FileWalker):
         return None, None
 
 
-def get_single_temporary_file_directory(*args):
+def get_single_temporary_file_directory(*args: str) -> str:
     """
     Get directory for SingleTemporaryFile *args.
     """
-    return os.path.join(gettempdir(), *args)
+    return str(Path(gettempdir()).joinpath(*args))
 
 
 class SingleTemporaryFile:
@@ -397,9 +425,9 @@ class SingleTemporaryFile:
      **kwargs. It will keep only the last temporary file is subdirectory by cleaning up the directory on each call.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: str, **kwargs: Any) -> None:
         self.tempdir = get_single_temporary_file_directory(*args)
-        os.makedirs(self.tempdir, exist_ok=True)
+        Path(self.tempdir).mkdir(parents=True, exist_ok=True)
 
         if "dir" in kwargs:
             kwargs.pop("dir")
@@ -408,15 +436,19 @@ class SingleTemporaryFile:
 
         self.named_temporary_file = NamedTemporaryFile(dir=self.tempdir, delete=False, **kwargs)
 
-    def __enter__(self):
+    def __enter__(self) -> IO[Any]:
         return self.named_temporary_file.__enter__()
 
-    def __exit__(self, exc_type, exc_value, exc_traceback):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        exc_traceback: TracebackType | None,
+    ) -> None:
         tmp_filepath = self.named_temporary_file.name
         try:
-            return self.named_temporary_file.__exit__(exc_type, exc_value, exc_traceback)
+            self.named_temporary_file.__exit__(exc_type, exc_value, exc_traceback)
         finally:
-            for previous_temporary_file in os.listdir(self.tempdir):
-                previous_temporary_filepath = os.path.join(self.tempdir, previous_temporary_file)
-                if previous_temporary_filepath != tmp_filepath:
-                    os.remove(previous_temporary_filepath)
+            for previous_temporary_file in Path(self.tempdir).iterdir():
+                if str(previous_temporary_file) != tmp_filepath:
+                    previous_temporary_file.unlink()

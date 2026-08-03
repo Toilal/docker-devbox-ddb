@@ -1,6 +1,7 @@
-import os
 import shlex
+from pathlib import Path
 from subprocess import CalledProcessError
+from typing import Any
 
 import yaml
 
@@ -9,7 +10,7 @@ from ddb.feature.docker.lib.compose.config.errors import ConfigurationError
 from ddb.utils.process import run
 
 
-def get_mapped_path(path: str):
+def get_mapped_path(path: str) -> str:
     """
     Get docker mapped path, using `docker.path_mapping` configuration.
 
@@ -32,7 +33,7 @@ class DockerComposeControl:
     A set of tools to manipulate docker using docker and docker-compose system commands.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         docker_command = config.data.get("docker.docker_command")
         docker_compose_command = config.data.get("docker.docker_compose_command")
 
@@ -43,7 +44,7 @@ class DockerComposeControl:
         self.docker_command = shlex.split(docker_command)
         self.docker_compose_command = shlex.split(docker_compose_command)
 
-    def up(self, name: str | None = None):
+    def up(self, name: str | None = None) -> None:
         """
         Execute docker-compose up -d.
 
@@ -51,14 +52,14 @@ class DockerComposeControl:
         :raise DockerComposeYamlMissingException: in case of missing docker-compose.yml in folder
         :return:
         """
-        if not os.path.exists("docker-compose.yml"):
+        if not Path("docker-compose.yml").exists():
             raise DockerComposeYamlMissingException
         if name is None:
             run(*self.docker_compose_command, "up", "-d")
         else:
             run(*self.docker_compose_command, "up", "-d", name)
 
-    def stop(self, name: str):
+    def stop(self, name: str) -> None:
         """
         Execute docker-compose stop.
 
@@ -66,14 +67,14 @@ class DockerComposeControl:
         :raise DockerComposeYamlMissingException: in case of missing docker-compose.yml in folder
         :return:
         """
-        if not os.path.exists("docker-compose.yml"):
+        if not Path("docker-compose.yml").exists():
             raise DockerComposeYamlMissingException
         if name is None:
             run(*self.docker_compose_command, "stop")
         else:
             run(*self.docker_compose_command, "stop", name)
 
-    def start(self, name: str):
+    def start(self, name: str) -> None:
         """
         Execute docker-compose start.
 
@@ -81,14 +82,14 @@ class DockerComposeControl:
         :raise DockerComposeYamlMissingException: in case of missing docker-compose.yml in folder
         :return:
         """
-        if not os.path.exists("docker-compose.yml"):
+        if not Path("docker-compose.yml").exists():
             raise DockerComposeYamlMissingException
         if name is None:
             run(*self.docker_compose_command, "start")
         else:
             run(*self.docker_compose_command, "start", name)
 
-    def down(self):
+    def down(self) -> None:
         """
         Execute docker-compose down.
 
@@ -96,11 +97,11 @@ class DockerComposeControl:
         :raise DockerComposeYamlMissingException: in case of missing docker-compose.yml in folder
         :return:
         """
-        if not os.path.exists("docker-compose.yml"):
+        if not Path("docker-compose.yml").exists():
             raise DockerComposeYamlMissingException
         run(*self.docker_compose_command, "down")
 
-    def is_up(self, name: str):
+    def is_up(self, name: str) -> bool:
         """
         Check if the given service is up.
 
@@ -108,7 +109,7 @@ class DockerComposeControl:
         :raise DockerComposeYamlMissingException: in case of missing docker-compose.yml in folder
         :return:
         """
-        if not os.path.exists("docker-compose.yml"):
+        if not Path("docker-compose.yml").exists():
             raise DockerComposeYamlMissingException
         try:
             container_id = run(*self.docker_compose_command, "ps", "-q", name).decode("utf-8").rstrip()
@@ -121,14 +122,14 @@ class DockerComposeControl:
         containers = run(*self.docker_command, "ps", "-q", "--no-trunc").decode("utf-8").rstrip().split("\n")
         return container_id in containers
 
-    def config(self, parse=True):
+    def config(self, *, parse: bool = True) -> Any:
         """
         Get the docker-compose.yml configuration content.
 
         :raise DockerComposeYamlMissingException: in case of missing docker-compose.yml
         :return:
         """
-        if not os.path.exists("docker-compose.yml"):
+        if not Path("docker-compose.yml").exists():
             raise DockerComposeYamlMissingException
 
         compose_config = run(*self.docker_compose_command, "config")
@@ -142,6 +143,6 @@ class DockerComposeYamlMissingException(Exception):
     Exception raised in case of missing docker-compose file.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.message = f"There is no docker-compose.yml file in current folder ({os.getcwd()})"
+        self.message = f"There is no docker-compose.yml file in current folder ({Path.cwd()})"

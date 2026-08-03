@@ -1,6 +1,7 @@
 import os
 from argparse import ArgumentParser
 from collections.abc import Iterable
+from pathlib import Path
 
 from dotty_dict import Dotty
 
@@ -58,12 +59,12 @@ class ShellFeature(Feature):
 
     @property
     def phases(self) -> Iterable[Phase]:
-        def activate_parser(parser: ArgumentParser):
+        def activate_parser(parser: ArgumentParser) -> None:
             parser.add_argument(
                 "--force", action="store_true", help="Force activation when a project is already activated."
             )
 
-        def deactivate_parser(parser: ArgumentParser):
+        def deactivate_parser(parser: ArgumentParser) -> None:
             parser.add_argument(
                 "--force", action="store_true", help="Force deactivation when a project is already deactivated"
             )
@@ -99,7 +100,7 @@ class ShellFeature(Feature):
             ),
         )
 
-    def _configure_defaults(self, feature_config: Dotty):
+    def _configure_defaults(self, feature_config: Dotty) -> None:
         if not feature_config.get("shell"):
             comspec = os.environ.get("COMSPEC")
             shell = os.environ.get("SHELL")
@@ -115,9 +116,9 @@ class ShellFeature(Feature):
         directories = feature_config.get("path.directories")
         absolute_directories = []
         for directory in directories:
-            if os.path.isabs(directory):
+            if Path(directory).is_absolute():
                 absolute_directories.append(directory)
             else:
-                absolute_directory = os.path.join(config.paths.project_home, directory)
+                absolute_directory = str(Path(config.paths.project_home) / directory)
                 absolute_directories.append(absolute_directory)
         feature_config["path.directories"] = absolute_directories

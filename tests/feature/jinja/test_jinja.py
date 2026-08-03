@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 
 from ddb.__main__ import load_registered_features, register_actions_in_event_bus
 from ddb.config import config, migrations
@@ -16,7 +16,7 @@ class TestJinjaAction:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         action = FileWalkAction()
         action.initialize()
@@ -29,7 +29,7 @@ class TestJinjaAction:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         action = FileWalkAction()
         action.initialize()
@@ -42,14 +42,14 @@ class TestJinjaAction:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         action = FileWalkAction()
         action.initialize()
         action.execute()
 
-        assert os.path.exists("foo.yml")
-        with open("foo.yml") as f:
+        assert Path("foo.yml").exists()
+        with Path("foo.yml").open() as f:
             foo = f.read()
 
         assert foo == "env: dev"
@@ -61,20 +61,20 @@ class TestJinjaAction:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         action = FileWalkAction()
         action.initialize()
         action.execute()
 
-        assert os.path.exists("foo.yml")
-        with open("foo.yml") as f:
+        assert Path("foo.yml").exists()
+        with Path("foo.yml").open() as f:
             foo = f.read()
 
         assert foo == "env: dev\nincluded: True"
 
-        assert not os.path.exists(os.path.join("partial", "_partial.yml"))
-        assert not os.path.exists(os.path.join("partial", "partial.yml"))
+        assert not (Path("partial") / "_partial.yml").exists()
+        assert not (Path("partial") / "partial.yml").exists()
 
     def test_project3(self, project_loader):
         project_loader("project3")
@@ -83,14 +83,14 @@ class TestJinjaAction:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         action = FileWalkAction()
         action.initialize()
         action.execute()
 
-        assert os.path.exists(".foo.yml")
-        with open(".foo.yml") as f:
+        assert Path(".foo.yml").exists()
+        with Path(".foo.yml").open() as f:
             foo = f.read()
 
         assert foo == "env: dev"
@@ -102,14 +102,14 @@ class TestJinjaAction:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         action = FileWalkAction()
         action.initialize()
         action.execute()
 
-        assert os.path.exists("foo")
-        with open("foo") as f:
+        assert Path("foo").exists()
+        with Path("foo").open() as f:
             foo = f.read()
 
         assert foo == "env=dev"
@@ -121,19 +121,19 @@ class TestJinjaAction:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         action = FileWalkAction()
         action.initialize()
         action.execute()
 
-        assert os.path.exists("foo")
-        with open("foo") as f:
+        assert Path("foo").exists()
+        with Path("foo").open() as f:
             foo = f.read()
         assert foo == "env=dev"
 
-        assert os.path.exists("foo.yml")
-        with open("foo.yml") as f:
+        assert Path("foo.yml").exists()
+        with Path("foo.yml").open() as f:
             foo = f.read()
 
         assert foo == "env: dev"
@@ -145,7 +145,7 @@ class TestJinjaAction:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         config.data["jinja.options"] = {"keep_trailing_newline": False}
 
@@ -153,8 +153,8 @@ class TestJinjaAction:
         action.initialize()
         action.execute()
 
-        assert os.path.exists("foo.yml")
-        with open("foo.yml") as f:
+        assert Path("foo.yml").exists()
+        with Path("foo.yml").open() as f:
             foo = f.read()
 
         assert foo == "test: trailing"
@@ -166,14 +166,14 @@ class TestJinjaAction:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         action = FileWalkAction()
         action.initialize()
         action.execute()
 
-        assert os.path.exists("foo.yml")
-        with open("foo.yml") as f:
+        assert Path("foo.yml").exists()
+        with Path("foo.yml").open() as f:
             foo = f.read()
 
         assert foo == "test: trailing\n"
@@ -185,7 +185,7 @@ class TestJinjaAction:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         config.data["jinja.options"] = {"keep_trailing_newline": True}
 
@@ -193,8 +193,8 @@ class TestJinjaAction:
         action.initialize()
         action.execute()
 
-        assert os.path.exists("foo.yml")
-        with open("foo.yml") as f:
+        assert Path("foo.yml").exists()
+        with Path("foo.yml").open() as f:
             foo = f.read()
 
         assert foo == "test: trailing\n"
@@ -219,25 +219,25 @@ class TestJinjaAutofix:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         action = FileWalkAction()
         action.initialize()
         action.execute()
 
-        assert os.path.exists("config.properties")
-        with open("config.properties") as f:
+        assert Path("config.properties").exists()
+        with Path("config.properties").open() as f:
             rendered = f.read()
 
-        with open("config.expected.properties") as f:
+        with Path("config.expected.properties").open() as f:
             expected = f.read()
 
         assert rendered == expected
 
-        with open("config.properties.jinja") as f:
+        with Path("config.properties.jinja").open() as f:
             source = f.read()
 
-        with open("config.properties.autofix") as f:
+        with Path("config.properties.autofix").open() as f:
             fixed = f.read()
 
         assert source == fixed
@@ -255,16 +255,16 @@ class TestJinjaAutofix:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         action = FileWalkAction()
         action.initialize()
         action.execute()
 
-        with open("docker-compose.properties") as f:
+        with Path("docker-compose.properties").open() as f:
             rendered = f.read()
 
-        with open("docker-compose.expected.properties") as f:
+        with Path("docker-compose.expected.properties").open() as f:
             expected = f.read()
 
         assert rendered == expected
@@ -284,24 +284,24 @@ class TestJinjaAutofix:
         features.register(FileFeature())
         features.register(JinjaFeature())
         load_registered_features()
-        register_actions_in_event_bus(True)
+        register_actions_in_event_bus(fail_fast=True)
 
         action = FileWalkAction()
         action.initialize()
         action.execute()
 
-        with open("msmtprc") as f:
+        with Path("msmtprc").open() as f:
             rendered = f.read()
 
-        with open("msmtprc.expected") as f:
+        with Path("msmtprc.expected").open() as f:
             expected = f.read()
 
         assert rendered == expected
 
-        with open("msmtprc.jinja") as f:
+        with Path("msmtprc.jinja").open() as f:
             template = f.read()
 
-        with open("msmtprc.autofix") as f:
+        with Path("msmtprc.autofix").open() as f:
             autofix = f.read()
 
         assert autofix == template

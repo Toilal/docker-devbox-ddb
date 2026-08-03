@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 
 from marshmallow import Schema, fields
 
@@ -7,18 +7,18 @@ from ddb.feature.schema import FeatureSchema
 from ...config import config
 
 
-def _get_path_default():
-    _path_default = []
+def _get_path_default() -> list[str]:
+    _path_default: list[str] = []
 
     if config.paths.project_home:
         _path_default.append(".bin")
         _path_default.append("bin")
 
     if config.paths.home:
-        _path_default.append(os.path.join(config.paths.home, ".bin"))
+        _path_default.append(str(Path(config.paths.home) / ".bin"))
 
     if config.paths.ddb_home:
-        _path_default.append(os.path.join(config.paths.ddb_home, ".bin"))
+        _path_default.append(str(Path(config.paths.ddb_home) / ".bin"))
 
     return _path_default
 

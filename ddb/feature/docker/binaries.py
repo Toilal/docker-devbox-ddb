@@ -2,6 +2,8 @@ import os
 import posixpath
 import shlex
 from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
 
 from ddb.binary.binary import AbstractBinary
 from ddb.config import config
@@ -26,10 +28,11 @@ class DockerBinary(AbstractBinary):
         options_condition: str | None = None,
         condition: str | None = None,
         args: str | None = None,
+        *,
         exe: bool = False,
         entrypoint: str | None = None,
         global_: bool = False,
-    ):
+    ) -> None:
         super().__init__(name)
         self.docker_compose_service = docker_compose_service
         self.workdir = workdir
@@ -42,7 +45,7 @@ class DockerBinary(AbstractBinary):
         self._global = global_
 
     @staticmethod
-    def simple_eval_options(*args):
+    def simple_eval_options(*args: str) -> dict[str, Any]:
         """
         Retrieve the simple_eval options.
         """
@@ -57,18 +60,17 @@ class DockerBinary(AbstractBinary):
             },
         }
 
-    def command(self, *args) -> Iterable[str]:
-        cwd = config.cwd if config.cwd else os.getcwd()
+    def command(self, *args: str) -> Iterable[str]:
+        cwd = config.cwd if config.cwd else str(Path.cwd())
         real_cwd = os.path.realpath(cwd)
         real_project_home = os.path.realpath(config.paths.project_home)
-        project_relpath = os.path.relpath(config.paths.project_home, config.cwd if config.cwd else os.getcwd())
+        project_relpath = os.path.relpath(config.paths.project_home, cwd)
+        # PTH118: the joined path lands in the command line printed by `ddb run` and in the
+        # generated shims, where Path would drop the leading `./` of a relative project path.
+        compose_file = os.path.join(project_relpath, "docker-compose.yml")  # noqa: PTH118
 
         if real_cwd.startswith(real_project_home):
-            params = (
-                ["exec"]
-                if hasattr(self, "exe") and self.exe
-                else ["-f", os.path.join(project_relpath, "docker-compose.yml"), "run", "--rm"]
-            )
+            params = ["exec"] if hasattr(self, "exe") and self.exe else ["-f", compose_file, "run", "--rm"]
 
             if self.workdir:
                 relpath = os.path.relpath(cwd, config.paths.project_home)
@@ -76,7 +78,7 @@ class DockerBinary(AbstractBinary):
                 params.append(f"--workdir={container_workdir}")
         else:
             # cwd is outside of project home.
-            params = ["-f", os.path.join(project_relpath, "docker-compose.yml"), "run", "--rm"]
+            params = ["-f", compose_file, "run", "--rm"]
             if self.workdir:
                 mapped_cwd = get_mapped_path(real_cwd)
                 params.append(f"--volume={mapped_cwd}:{self.workdir}")
@@ -101,7 +103,7 @@ class DockerBinary(AbstractBinary):
             raise ConfigurationError(msg)
         return effective_command(*shlex.split(docker_compose_command), *params)
 
-    def add_options_to_params(self, params, options, condition, *args):
+    def add_options_to_params(self, params: list[str], options: str | None, condition: str | None, *args: str) -> None:
         """
         Add options to params if condition is fulfilled.
 
@@ -118,12 +120,12 @@ class DockerBinary(AbstractBinary):
             if options is not None:
                 params.extend(shlex.split(options))
 
-    def before_run(self, *args):
+    def before_run(self, *args: str) -> None:
         control = DockerComposeControl()
         if self.exe and not control.is_up(self.docker_compose_service):
             control.up(self.docker_compose_service)
 
-    def should_run(self, *args) -> bool:
+    def should_run(self, *args: str) -> bool:
         if self.condition:
             return bool(simple_eval(self.condition, **self.simple_eval_options(*args)))
         return super().should_run(*args)
@@ -132,23 +134,23 @@ class DockerBinary(AbstractBinary):
     def global_(self) -> bool:
         return self._global
 
-    def __lt__(self, other):
+    def __lt__(self, other: object) -> bool:
         """
         Order binaries in run feature action.
         """
         if not isinstance(other, DockerBinary):
             return True
-        return self.condition and not other.condition
+        return bool(self.condition and not other.condition)
 
-    def __gt__(self, other):
+    def __gt__(self, other: object) -> bool:
         """
         Order binaries in run feature action.
         """
         if not isinstance(other, DockerBinary):
             return False
-        return not self.condition and other.condition
+        return bool(not self.condition and other.condition)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         """
         Check if given binary is the same as the current one.
 
@@ -175,7 +177,7 @@ class DockerBinary(AbstractBinary):
             return False
         return self.entrypoint == other.entrypoint
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(
             (
                 super().__hash__(),

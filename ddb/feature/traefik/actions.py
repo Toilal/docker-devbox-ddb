@@ -1,8 +1,11 @@
-import os
 import re
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
 
 from jinja2 import Template
 
+from ddb.action.action import EventBindings
 from ddb.config import config
 
 from ...action import Action, InitializableAction
@@ -20,9 +23,10 @@ def get_template(template: str) -> Template:
     :param template: the template
     :return:
     """
+    # jinja2.Template.__new__ is typed as returning Any.
     if re.compile("^(https?|file)://").match(template):
-        return Template(FileUtils.get_file_content(template))
-    return Template(template)
+        return Template(FileUtils.get_file_content(template))  # type: ignore[no-any-return]
+    return Template(template)  # type: ignore[no-any-return]
 
 
 class TraefikInstalllCertsAction(Action):
@@ -31,7 +35,7 @@ class TraefikInstalllCertsAction(Action):
     """
 
     @property
-    def event_bindings(self):
+    def event_bindings(self) -> EventBindings:
         return events.certs.available
 
     @property
@@ -39,7 +43,7 @@ class TraefikInstalllCertsAction(Action):
         return "traefik:install-certs"
 
     @staticmethod
-    def execute(domain: str, private_key: str, certificate: str, wildcard: bool = False):
+    def execute(domain: str, private_key: str, certificate: str, *, wildcard: bool = False) -> None:
         """
         Execute action.
         """
@@ -48,11 +52,11 @@ class TraefikInstalllCertsAction(Action):
         config_directory = config.data.get("traefik.config_directory")
 
         private_key_filename = f"{domain}.key"
-        private_key_filename_target = os.path.join(certs_directory, private_key_filename)
+        private_key_filename_target = str(Path(certs_directory) / private_key_filename)
         copy_if_different(private_key, private_key_filename_target, log=True)
 
         certificate_filename = f"{domain}.crt"
-        certificate_filename_target = os.path.join(certs_directory, certificate_filename)
+        certificate_filename_target = str(Path(certs_directory) / certificate_filename)
         copy_if_different(certificate, certificate_filename_target, log=True)
 
         config_data = dict(config.data)
@@ -63,7 +67,7 @@ class TraefikInstalllCertsAction(Action):
 
         ssl_config = get_template(config.data.get("traefik.ssl_config_template")).render(config_data)
 
-        config_target = os.path.join(config_directory, f"{domain}.ssl.toml")
+        config_target = str(Path(config_directory) / f"{domain}.ssl.toml")
         if write_if_different(config_target, ssl_config, "r", "w"):
             context.log.success(f"SSL Configuration file written for domain {domain}")
         else:
@@ -76,7 +80,7 @@ class TraefikUninstalllCertsAction(Action):
     """
 
     @property
-    def event_bindings(self):
+    def event_bindings(self) -> EventBindings:
         return events.certs.removed
 
     @property
@@ -84,27 +88,27 @@ class TraefikUninstalllCertsAction(Action):
         return "traefik:uninstall-certs"
 
     @staticmethod
-    def execute(domain: str):
+    def execute(domain: str) -> None:
         """
         Execute action.
         """
         config_directory = config.data.get("traefik.config_directory")
-        config_target = os.path.join(config_directory, f"{domain}.ssl.toml")
+        config_target = str(Path(config_directory) / f"{domain}.ssl.toml")
 
-        if os.path.exists(config_target):
+        if Path(config_target).exists():
             force_remove(config_target)
             context.log.notice(f"SSL Configuration file removed for domain {domain}")
 
         certs_directory = config.data.get("traefik.certs_directory")
         private_key_filename = f"{domain}.key"
-        private_key_filename_target = os.path.join(certs_directory, private_key_filename)
-        if os.path.exists(private_key_filename_target):
+        private_key_filename_target = str(Path(certs_directory) / private_key_filename)
+        if Path(private_key_filename_target).exists():
             force_remove(private_key_filename_target)
             context.log.notice(f"SSL private key file removed for domain {domain}")
 
         certificate_filename = f"{domain}.crt"
-        certificate_filename_target = os.path.join(certs_directory, certificate_filename)
-        if os.path.exists(certificate_filename_target):
+        certificate_filename_target = str(Path(certs_directory) / certificate_filename)
+        if Path(certificate_filename_target).exists():
             force_remove(certificate_filename_target)
             context.log.notice(f"SSL certificate file removed for domain {domain}")
 
@@ -114,32 +118,34 @@ class TraefikExtraServicesAction(InitializableAction):
     Generates extra services configuration to register any http/https URL inside the traefik reverse proxy.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.removal_cache_support = None  # type: RemovalCacheSupport
+        # Set by initialize(), before the first event binding runs.
+        self.removal_cache_support: RemovalCacheSupport = None  # type: ignore[assignment]
 
     @property
-    def event_bindings(self):
+    def event_bindings(self) -> EventBindings:
         return events.phase.configure
 
     @property
     def name(self) -> str:
         return "traefik:extra-services"
 
-    def initialize(self):
+    def initialize(self) -> None:
         self.removal_cache_support = RemovalCacheSupport("traefik.extra-services", {"generated-files", "certs-domains"})
 
-    def destroy(self):
+    def destroy(self) -> None:
         if self.removal_cache_support:
             self.removal_cache_support.close()
-            self.removal_cache_support = None
+            # Reset like __init__ does, initialize() sets it again on the next run.
+            self.removal_cache_support = None  # type: ignore[assignment]
 
     @staticmethod
-    def get_extra_services():
+    def get_extra_services() -> Iterator[tuple[str, dict[str, Any], MigrationsDotty]]:
         """
         Get extra services defined in configuration.
         """
-        extra_services = config.data.get("traefik.extra_services")  # type: Dict[str, ExtraServiceSchema]
+        extra_services = config.data.get("traefik.extra_services")
         if extra_services:
             for id_, extra_service in extra_services.items():
                 extra_service_data, config_data = TraefikExtraServicesAction._prepare_extra_service_data(
@@ -147,7 +153,7 @@ class TraefikExtraServicesAction(InitializableAction):
                 )
                 yield id_, extra_service_data, config_data
 
-    def execute(self):
+    def execute(self) -> None:
         """
         Execute action.
         """
@@ -166,7 +172,7 @@ class TraefikExtraServicesAction(InitializableAction):
                     x for x in ["rule", config.data.get("core.domain.sub"), config.data.get("core.domain.ext")] if x
                 )
 
-            config_target = os.path.join(config_directory, f"{prefix}.extra-service.{id_}.toml")
+            config_target = str(Path(config_directory) / f"{prefix}.extra-service.{id_}.toml")
             if write_if_different(config_target, rendered_config, "r", "w"):
                 context.log.success(f"Extra service configuration file written for domain {prefix}")
             else:
@@ -185,17 +191,15 @@ class TraefikExtraServicesAction(InitializableAction):
                 force_remove(value)
 
     @staticmethod
-    def _prepare_extra_service_data(extra_service, id_):
+    def _prepare_extra_service_data(extra_service: dict[str, Any], id_: str) -> tuple[dict[str, Any], MigrationsDotty]:
         data = MigrationsDotty(dict(config.data))
         extra_service_data = dict(extra_service)
         extra_service_data["id"] = id_
         data["_local"] = extra_service_data
-        if extra_service_data.get("domain"):
-            extra_service_data["domain"] = Template(extra_service_data.get("domain")).render(data)
-        if extra_service_data.get("rule"):
-            extra_service_data["rule"] = Template(extra_service_data.get("rule")).render(data)
-        if extra_service_data.get("url"):
-            extra_service_data["url"] = Template(extra_service_data.get("url")).render(data)
+        for templated_key in ("domain", "rule", "url"):
+            templated_value = extra_service_data.get(templated_key)
+            if templated_value:
+                extra_service_data[templated_key] = Template(templated_value).render(data)
 
         if extra_service["https"] is not None:
             extra_service_data["redirect_to_https"] = False
